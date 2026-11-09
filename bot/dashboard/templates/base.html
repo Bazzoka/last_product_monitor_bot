@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Product Monitor{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    {% if session.get('logged_in') %}
+    <nav class="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-icon">📦</span>
+            <span class="brand-text">Product Monitor</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}active{% endif %}">
+                <span class="nav-icon">📊</span> Dashboard
+            </a></li>
+            <li><a href="{{ url_for('products') }}" class="{% if request.endpoint == 'products' %}active{% endif %}">
+                <span class="nav-icon">🛒</span> Products
+            </a></li>
+            <li><a href="{{ url_for('logs') }}" class="{% if request.endpoint == 'logs' %}active{% endif %}">
+                <span class="nav-icon">📋</span> Logs
+            </a></li>
+            <li><a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">
+                <span class="nav-icon">⚙️</span> Settings
+            </a></li>
+        </ul>
+        <div class="sidebar-footer">
+            <span class="user-badge">{{ session.get('username', 'admin') }}</span>
+            <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
+        </div>
+    </nav>
+    {% endif %}
+
+    <main class="{% if session.get('logged_in') %}main-content{% else %}auth-layout{% endif %}">
+        {% block content %}{% endblock %}
+    </main>
+
+    <div id="toast-container"></div>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

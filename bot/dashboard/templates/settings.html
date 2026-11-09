@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Settings - Product Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Settings</h1>
+        <p class="subtitle">Configure monitoring and notification preferences</p>
+    </div>
+</div>
+
+<div class="settings-grid">
+    <div class="card">
+        <div class="card-header"><h2>Monitoring</h2></div>
+        <div class="card-body">
+            <form id="settings-form">
+                <div class="form-group">
+                    <label for="check-interval">Check Interval (hours)</label>
+                    <input type="number" id="check-interval" min="1" max="24" value="1">
+                    <small>Requires restart to take effect. Set via CHECK_INTERVAL_HOURS in .env</small>
+                </div>
+                <div class="form-group">
+                    <label for="price-threshold">Price Change Threshold (%)</label>
+                    <input type="number" id="price-threshold" min="0" max="100" step="0.1" value="0">
+                    <small>Notify when price changes by this percentage (0 = any change)</small>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="notify-initial" checked>
+                        Skip notification on first check
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="hourly-summary" checked>
+                        Send hourly summary report (email + Telegram)
+                    </label>
+                </div>
+                <button type="submit" class="btn btn-primary">Save Settings</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h2>Notification Channels</h2></div>
+        <div class="card-body">
+            <div class="channel-status">
+                <div class="channel-item">
+                    <span>📧 Email</span>
+                    <span id="email-status" class="badge badge-gray">Checking...</span>
+                </div>
+                <div class="channel-item">
+                    <span>📱 Telegram</span>
+                    <span id="telegram-status" class="badge badge-gray">Checking...</span>
+                </div>
+            </div>
+            <p class="help-text">Configure credentials in your <code>.env</code> file. See README for setup instructions.</p>
+            <button type="button" id="test-notifications" class="btn btn-secondary" style="margin-top:12px;">Send Test Notification</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h2>Environment Variables</h2></div>
+        <div class="card-body">
+            <table class="env-table">
+                <tr><td>EMAIL_HOST, EMAIL_PORT, EMAIL_USERNAME, EMAIL_PASSWORD</td><td>Email notifications</td></tr>
+                <tr><td>TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID</td><td>Telegram notifications</td></tr>
+                <tr><td>USE_PROXY, PROXY_HTTP, PROXY_HTTPS</td><td>Proxy support</td></tr>
+                <tr><td>DASHBOARD_USERNAME, DASHBOARD_PASSWORD</td><td>Dashboard login</td></tr>
+                <tr><td>CHECK_INTERVAL_HOURS, MAX_RETRIES, REQUEST_TIMEOUT</td><td>Monitoring behavior</td></tr>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    loadSettings();
+    document.getElementById('settings-form').addEventListener('submit', saveSettings);
+    document.getElementById('test-notifications').addEventListener('click', testNotifications);
+});
+
+async function loadSettings() {
+    const res = await fetch('/api/settings');
+    const data = await res.json();
+    if (data.success) {
+        const s = data.settings;
+        if (s.price_change_threshold != null) document.getElementById('price-threshold').value = s.price_change_threshold;
+        if (s.skip_initial_notification != null) document.getElementById('notify-initial').checked = s.skip_initial_notification;
+        if (s.hourly_summary_enabled != null) document.getElementById('hourly-summary').checked = s.hourly_summary_enabled;
+        document.getElementById('email-status').textContent = s.email_configured ? 'Configured' : 'Not configured';
+        document.getElementById('email-status').className = 'badge ' + (s.email_configured ? 'badge-green' : 'badge-red');
+        document.getElementById('telegram-status').textContent = s.telegram_configured ? 'Configured' : 'Not configured';
+        document.getElementById('telegram-status').className = 'badge ' + (s.telegram_configured ? 'badge-green' : 'badge-red');
+    }
+}
+
+async function saveSettings() {
+    const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            price_change_threshold: parseFloat(document.getElementById('price-threshold').value),
+            skip_initial_notification: document.getElementById('notify-initial').checked,
+            hourly_summary_enabled: document.getElementById('hourly-summary').checked
+        })
+    });
+    const data = await res.json();
+    showToast(data.success ? 'Settings saved' : 'Failed to save', data.success ? 'success' : 'error');
+}
+
+async function testNotifications() {
+    const btn = document.getElementById('test-notifications');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    try {
+        const res = await fetch('/api/test-notifications', { method: 'POST' });
+        const data = await res.json();
+        if (!data.success) {
+            showToast(data.error || 'Test failed', 'error');
+            return;
+        }
+        const r = data.results || {};
+        const parts = [];
+        if (r.email) parts.push('Email OK');
+        else parts.push('Email failed (check .env Gmail app password)');
+        if (r.telegram) parts.push('Telegram OK');
+        else parts.push('Telegram failed (check bot token & chat ID)');
+        showToast(parts.join(' · '), (r.email || r.telegram) ? 'success' : 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Send Test Notification';
+    }
+}
+</script>
+{% endblock %}

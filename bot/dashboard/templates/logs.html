@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Logs - Product Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Logs</h1>
+        <p class="subtitle">System activity and error history</p>
+    </div>
+    <div class="filter-bar">
+        <select id="level-filter">
+            <option value="">All Levels</option>
+            <option value="INFO">INFO</option>
+            <option value="WARNING">WARNING</option>
+            <option value="ERROR">ERROR</option>
+        </select>
+        <button id="refresh-logs" class="btn btn-secondary">Refresh</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div id="logs-container">
+            <p class="empty-state">Loading logs...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    loadLogs();
+    document.getElementById('level-filter').addEventListener('change', loadLogs);
+    document.getElementById('refresh-logs').addEventListener('click', loadLogs);
+});
+
+async function loadLogs() {
+    const level = document.getElementById('level-filter').value;
+    const url = level ? `/api/logs?limit=200&level=${level}` : '/api/logs?limit=200';
+    const res = await fetch(url);
+    const data = await res.json();
+    const container = document.getElementById('logs-container');
+    if (data.success && data.logs.length > 0) {
+        container.innerHTML = `
+            <table class="data-table logs-table">
+                <thead>
+                    <tr><th>Time</th><th>Level</th><th>Component</th><th>Message</th></tr>
+                </thead>
+                <tbody>
+                    ${data.logs.map(l => `
+                        <tr class="log-${l.level.toLowerCase()}">
+                            <td class="log-time">${formatDate(l.timestamp)}</td>
+                            <td><span class="badge badge-${levelColor(l.level)}">${l.level}</span></td>
+                            <td>${escapeHtml(l.component || 'system')}</td>
+                            <td>${escapeHtml(l.message)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>`;
+    } else {
+        container.innerHTML = '<p class="empty-state">No logs found</p>';
+    }
+}
+
+function levelColor(level) {
+    if (level === 'ERROR') return 'red';
+    if (level === 'WARNING') return 'yellow';
+    return 'gray';
+}
+</script>
+{% endblock %}

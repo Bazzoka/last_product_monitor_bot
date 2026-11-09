@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Product Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Dashboard</h1>
+        <p class="subtitle">Overview of your product monitoring status</p>
+    </div>
+    <button id="check-now-btn" class="btn btn-primary">Check Now</button>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon blue">📦</div>
+        <div class="stat-info">
+            <span class="stat-value" id="stat-total">-</span>
+            <span class="stat-label">Total Products</span>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon green">✅</div>
+        <div class="stat-info">
+            <span class="stat-value" id="stat-in-stock">-</span>
+            <span class="stat-label">In Stock</span>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon red">❌</div>
+        <div class="stat-info">
+            <span class="stat-value" id="stat-out-of-stock">-</span>
+            <span class="stat-label">Out of Stock</span>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon yellow">⚠️</div>
+        <div class="stat-info">
+            <span class="stat-value" id="stat-low-stock">-</span>
+            <span class="stat-label">Low Stock</span>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon purple">🔔</div>
+        <div class="stat-info">
+            <span class="stat-value" id="stat-notifications">-</span>
+            <span class="stat-label">Recent Alerts (24h)</span>
+        </div>
+    </div>
+</div>
+
+<div class="info-bar">
+    <div class="info-item">
+        <span class="info-label">Bot Status:</span>
+        <span id="bot-status" class="badge badge-gray">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Last Scan:</span>
+        <span id="last-scan">Never</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Active Monitors:</span>
+        <span id="stat-enabled">-</span>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Recent Notifications</h2>
+    </div>
+    <div class="card-body">
+        <div id="notifications-list" class="notifications-list">
+            <p class="empty-state">Loading notifications...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    loadDashboardStats();
+    loadNotifications();
+    setInterval(loadDashboardStats, 30000);
+
+    document.getElementById('check-now-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('check-now-btn');
+        btn.disabled = true;
+        btn.textContent = 'Checking...';
+        try {
+            const res = await fetch('/api/check-now', { method: 'POST' });
+            const data = await res.json();
+            showToast(data.success ? 'Check completed!' : data.error, data.success ? 'success' : 'error');
+            loadDashboardStats();
+            loadNotifications();
+        } catch (e) {
+            showToast('Failed to trigger check', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Check Now';
+        }
+    });
+});
+
+async function loadDashboardStats() {
+    try {
+        const res = await fetch('/api/statistics');
+        const data = await res.json();
+        if (data.success) {
+            const s = data.statistics;
+            document.getElementById('stat-total').textContent = s.total_products;
+            document.getElementById('stat-in-stock').textContent = s.in_stock;
+            document.getElementById('stat-out-of-stock').textContent = s.out_of_stock;
+            document.getElementById('stat-low-stock').textContent = s.low_stock ?? 0;
+            document.getElementById('stat-notifications').textContent = s.recent_notifications_count;
+            document.getElementById('stat-enabled').textContent = s.enabled_products;
+            document.getElementById('last-scan').textContent = s.last_check_time ? formatDate(s.last_check_time) : 'Never';
+            const statusEl = document.getElementById('bot-status');
+            statusEl.textContent = s.bot_running ? 'Running' : 'Stopped';
+            statusEl.className = 'badge ' + (s.bot_running ? 'badge-green' : 'badge-red');
+        }
+    } catch (e) { console.error(e); }
+}
+
+async function loadNotifications() {
+    try {
+        const res = await fetch('/api/notifications?limit=10');
+        const data = await res.json();
+        const container = document.getElementById('notifications-list');
+        if (data.success && data.notifications.length > 0) {
+            container.innerHTML = data.notifications.map(n => `
+                <div class="notification-item">
+                    <div class="notification-icon">${n.type === 'email' ? '📧' : '📱'}</div>
+                    <div class="notification-content">
+                        <strong>${escapeHtml(n.product_name)}</strong>
+                        <p>${escapeHtml(n.message)}</p>
+                        <span class="notification-time">${formatDate(n.timestamp)}</span>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            container.innerHTML = '<p class="empty-state">No notifications yet</p>';
+        }
+    } catch (e) { console.error(e); }
+}
+</script>
+{% endblock %}

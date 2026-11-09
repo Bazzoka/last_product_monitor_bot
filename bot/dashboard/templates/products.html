@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Products - Product Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Products</h1>
+        <p class="subtitle">Manage monitored product URLs</p>
+    </div>
+    <button id="add-product-btn" class="btn btn-primary">+ Add Product</button>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div id="products-table-container">
+            <p class="empty-state">Loading products...</p>
+        </div>
+    </div>
+</div>
+
+<div id="add-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Add Product</h2>
+            <button class="modal-close">&times;</button>
+        </div>
+        <form id="add-product-form">
+            <div class="form-group">
+                <label for="product-name">Product Name</label>
+                <input type="text" id="product-name" required maxlength="200" placeholder="e.g. Sony WH-1000XM5">
+            </div>
+            <div class="form-group">
+                <label for="product-url">Product URL</label>
+                <input type="url" id="product-url" required placeholder="https://example.com/product/123">
+            </div>
+            <details class="advanced-selectors">
+                <summary>Advanced: Custom CSS Selectors (optional)</summary>
+                <div class="form-group">
+                    <label for="stock-selector">Stock Selector</label>
+                    <input type="text" id="stock-selector" placeholder=".stock-status">
+                </div>
+                <div class="form-group">
+                    <label for="price-selector">Price Selector</label>
+                    <input type="text" id="price-selector" placeholder=".product-price">
+                </div>
+                <div class="form-group">
+                    <label for="title-selector">Title Selector</label>
+                    <input type="text" id="title-selector" placeholder="h1.product-title">
+                </div>
+            </details>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Product</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    loadProducts();
+    setupModal();
+});
+
+function setupModal() {
+    const modal = document.getElementById('add-modal');
+    document.getElementById('add-product-btn').addEventListener('click', () => modal.classList.remove('hidden'));
+    modal.querySelectorAll('.modal-close, .modal-backdrop').forEach(el => {
+        el.addEventListener('click', () => modal.classList.add('hidden'));
+    });
+    document.getElementById('add-product-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const selectors = {};
+        const stock = document.getElementById('stock-selector').value.trim();
+        const price = document.getElementById('price-selector').value.trim();
+        const title = document.getElementById('title-selector').value.trim();
+        if (stock) selectors.stock = [stock];
+        if (price) selectors.price = [price];
+        if (title) selectors.title = [title];
+
+        const res = await fetch('/api/products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: document.getElementById('product-name').value.trim(),
+                url: document.getElementById('product-url').value.trim(),
+                selectors
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Product added successfully', 'success');
+            modal.classList.add('hidden');
+            e.target.reset();
+            loadProducts();
+        } else {
+            showToast(data.error || 'Failed to add product', 'error');
+        }
+    });
+}
+
+async function loadProducts() {
+    const res = await fetch('/api/products');
+    const data = await res.json();
+    const container = document.getElementById('products-table-container');
+    if (!data.success || !data.products.length) {
+        container.innerHTML = '<p class="empty-state">No products being monitored. Click "Add Product" to start.</p>';
+        return;
+    }
+    container.innerHTML = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Price</th>
+                    <th>Qty</th>
+                    <th>Last Checked</th>
+                    <th>Monitoring</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${data.products.map(p => `
+                    <tr>
+                        <td>
+                            <strong>${escapeHtml(p.name)}</strong>
+                            <br><a href="${escapeHtml(p.url)}" target="_blank" class="url-link">${truncate(p.url, 50)}</a>
+                        </td>
+                        <td>${statusBadge(p)}</td>
+                        <td>${p.current_price != null ? (p.currency || 'USD') + ' ' + Number(p.current_price).toFixed(2) : '—'}</td>
+                        <td>${p.quantity != null ? p.quantity : '—'}</td>
+                        <td>${p.last_checked ? formatDate(p.last_checked) : 'Never'}</td>
+                        <td>
+                            <label class="toggle">
+                                <input type="checkbox" ${p.monitoring_enabled ? 'checked' : ''} onchange="toggleProduct('${p.id}', this)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </td>
+                        <td>
+                            <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">Delete</button>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>`;
+}
+
+async function toggleProduct(id, checkbox) {
+    const res = await fetch(`/api/products/${id}/toggle`, { method: 'POST' });
+    const data = await res.json();
+    if (!data.success) {
+        checkbox.checked = !checkbox.checked;
+        showToast('Failed to toggle monitoring', 'error');
+    } else {
+        showToast(data.enabled ? 'Monitoring enabled' : 'Monitoring disabled', 'success');
+    }
+}
+
+async function deleteProduct(id) {
+    if (!confirm('Remove this product from monitoring?')) return;
+    const res = await fetch('/api/products', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id: id })
+    });
+    const data = await res.json();
+    if (data.success) {
+        showToast('Product removed', 'success');
+        loadProducts();
+    } else {
+        showToast(data.error || 'Failed to delete', 'error');
+    }
+}
+
+function statusBadge(product) {
+    const status = product.stock_status || (
+        product.in_stock === true ? 'in_stock' :
+        product.in_stock === false ? 'out_of_stock' : 'unknown'
+    );
+    if (status === 'low_stock') {
+        const qty = product.quantity != null ? ` (${product.quantity} left)` : '';
+        return `<span class="badge badge-yellow">Low Stock${qty}</span>`;
+    }
+    if (status === 'in_stock') return '<span class="badge badge-green">In Stock</span>';
+    if (status === 'out_of_stock') return '<span class="badge badge-red">Out of Stock</span>';
+    if (status === 'removed') return '<span class="badge badge-red">Removed from store</span>';
+    return '<span class="badge badge-gray">Unknown</span>';
+}
+</script>
+{% endblock %}
